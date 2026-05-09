@@ -46,3 +46,6 @@ arsenal_points_dist.json
 city_points_dist.json
 simulation_results.pkl
 standings_debug.json
+
+# Streamlit secrets (contains database credentials)
+.streamlit/secrets.toml
