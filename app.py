@@ -351,42 +351,125 @@ def get_default_database_url():
         return default_db_url
 
 
-try:
-    sim_data, using_live_data = get_active_simulation_data()
-except FileNotFoundError:
-    st.error("Simulation data file `sim_results.pkl` was not found.")
-    st.stop()
+# Try to load simulation data (from pickle or live session state)
+sim_data = None
+using_live_data = False
 
+if "live_sim_data" in st.session_state:
+    sim_data = st.session_state["live_sim_data"]
+    using_live_data = True
+else:
+    try:
+        sim_data, _ = load_simulation_data()
+    except FileNotFoundError:
+        sim_data = None
 
-required_keys = [
-    "arsenal_points",
-    "city_points",
-    "point_diff",
-    "arsenal_progress",
-    "city_progress",
-]
-missing_keys = [key for key in required_keys if key not in sim_data]
-if missing_keys:
-    st.error(f"Simulation data is missing required keys: {', '.join(missing_keys)}")
-    st.stop()
+# Validate loaded data
+if sim_data is not None:
+    required_keys = [
+        "arsenal_points",
+        "city_points",
+        "point_diff",
+        "arsenal_progress",
+        "city_progress",
+    ]
+    missing_keys = [key for key in required_keys if key not in sim_data]
+    if missing_keys:
+        st.warning(f"Simulation data missing keys: {', '.join(missing_keys)}")
+        sim_data = None
 
+# Extract data if available
+if sim_data is not None:
+    arsenal_points = np.asarray(sim_data["arsenal_points"])
+    city_points = np.asarray(sim_data["city_points"])
+    point_diff = np.asarray(sim_data["point_diff"])
+    arsenal_progress = np.asarray(sim_data["arsenal_progress"])
+    city_progress = np.asarray(sim_data["city_progress"])
+    results_df = sim_data.get("results", pd.DataFrame())
+    team_probs = sim_data.get("team_probs")
 
-arsenal_points = np.asarray(sim_data["arsenal_points"])
-city_points = np.asarray(sim_data["city_points"])
-point_diff = np.asarray(sim_data["point_diff"])
-arsenal_progress = np.asarray(sim_data["arsenal_progress"])
-city_progress = np.asarray(sim_data["city_progress"])
-results_df = sim_data.get("results", pd.DataFrame())
-team_probs = sim_data.get("team_probs")
+    if team_probs is None and isinstance(results_df, pd.DataFrame):
+        if {"title_probability", "team_name"}.issubset(results_df.columns):
+            team_probs = results_df.copy()
 
-if team_probs is None and isinstance(results_df, pd.DataFrame):
-    if {"title_probability", "team_name"}.issubset(results_df.columns):
-        team_probs = results_df.copy()
+    diff_series = pd.Series(point_diff)
+    simulation_count = len(diff_series)
 
+if sim_data is None:
+    # No simulation data available - show fallback UI
+    st.markdown(
+        """
+        <section class="hero">
+            <div class="eyebrow">Premier League Simulator</div>
+            <h1 class="hero-title">No Simulation Data Available</h1>
+            <p class="hero-subtitle">
+                The simulation results file was not found. 
+                Run a live simulation from your MySQL database to generate fresh predictions.
+            </p>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+    
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown('<div class="section-label">Live Database Simulation</div>', unsafe_allow_html=True)
+    
+    default_db_url = get_default_database_url()
+    
+    st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
+    st.caption("Run a fresh title simulation from the current MySQL standings and scheduled fixtures.")
+    
+    live_col1, live_col2 = st.columns([3, 1])
+    with live_col1:
+        db_url = st.text_input(
+            "Database URL",
+            value=default_db_url,
+            type="password",
+            help="Example: mysql+pymysql://root:password@localhost/epl_database",
+        )
+    with live_col2:
+        live_simulations = st.number_input(
+            "Simulations",
+            min_value=100,
+            max_value=50000,
+            value=1000,
+            step=100,
+        )
+    
+    if st.button("Run Live Simulation", type="primary", use_container_width=True):
+        try:
+            from simulation_engine import run_simulation
+            from sqlalchemy import create_engine
+            
+            engine = create_engine(db_url)
+            standings = pd.read_sql("SELECT * FROM standings", engine)
+            matches = pd.read_sql(
+                """
+                SELECT * FROM matches
+                WHERE status IN ('SCHEDULED', 'TIMED')
+                """,
+                engine,
+            )
+            
+            if standings.empty:
+                st.error("Standings table is empty.")
+            elif matches.empty:
+                st.error("No upcoming matches found in the database.")
+            else:
+                live_results = run_simulation(standings, matches, n_simulations=int(live_simulations))
+                normalized_live_results = normalize_live_results(live_results, standings)
+                save_simulation_data(normalized_live_results)
+                load_simulation_data.clear()
+                st.session_state["live_sim_data"] = normalized_live_results
+                st.session_state["live_sim_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.rerun()
+        except Exception as e:
+            st.error(f"Live simulation failed: {e}")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.stop()  # Stop here - don't try to render dashboard without data
 
-diff_series = pd.Series(point_diff)
-simulation_count = len(diff_series)
-
+# Continue with normal dashboard if we have data
 arsenal_win = float((diff_series > 0).mean() * 100)
 city_win = float((diff_series < 0).mean() * 100)
 draw_finish = float((diff_series == 0).mean() * 100)
