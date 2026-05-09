@@ -1,3 +1,4 @@
+import os
 import pickle
 from datetime import datetime
 
@@ -262,7 +263,11 @@ plt.rcParams.update(
 
 @st.cache_data(show_spinner=False)
 def load_simulation_data():
-    with open("sim_results.pkl", "rb") as f:
+    # Get the directory where app.py is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(script_dir, "sim_results.pkl")
+    
+    with open(file_path, "rb") as f:
         return pickle.load(f)
 
 
