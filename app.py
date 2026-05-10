@@ -366,7 +366,7 @@ if "live_sim_data" in st.session_state:
     using_live_data = True
 else:
     try:
-        sim_data, _ = load_simulation_data()
+        sim_data = load_simulation_data()
     except FileNotFoundError:
         sim_data = None
 
