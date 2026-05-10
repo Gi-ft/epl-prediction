@@ -346,7 +346,13 @@ def save_simulation_data(simulation_data):
 def get_default_database_url():
     default_db_url = "mysql+pymysql://user:password@localhost/your_db"
     try:
-        return st.secrets.get("database_url", default_db_url)
+        if "database_url" in st.secrets:
+            return st.secrets["database_url"]
+
+        if "database" in st.secrets and "url" in st.secrets["database"]:
+            return st.secrets["database"]["url"]
+
+        return default_db_url
     except StreamlitSecretNotFoundError:
         return default_db_url
 
@@ -456,7 +462,17 @@ if sim_data is None:
             elif matches.empty:
                 st.error("No upcoming matches found in the database.")
             else:
-                live_results = run_simulation(standings, matches, n_simulations=int(live_simulations))
+                points = dict(zip(standings["team_id"], standings["points"]))
+                goal_diff = dict(zip(standings["team_id"], standings["goal_difference"]))
+                team_strength = build_strength_lookup(standings)
+
+                live_results = run_simulation(
+                    matches,
+                    points,
+                    goal_diff,
+                    team_strength,
+                    simulations=int(live_simulations),
+                )
                 normalized_live_results = normalize_live_results(live_results, standings)
                 save_simulation_data(normalized_live_results)
                 load_simulation_data.clear()

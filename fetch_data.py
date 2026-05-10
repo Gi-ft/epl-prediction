@@ -1,7 +1,17 @@
+import os
+
 import requests
 
 
-headers = {"X-Auth-Token": "9944c10a5a724cb5884ab9ae5ecde88c"}
+api_token = os.getenv("FOOTBALL_DATA_API_KEY")
+
+if not api_token:
+    raise RuntimeError(
+        "FOOTBALL_DATA_API_KEY is not set. Add it as an environment variable "
+        "or Streamlit secret before fetching data."
+    )
+
+headers = {"X-Auth-Token": api_token}
 
 # Fetch Teams
 teams_url = "https://api.football-data.org/v4/competitions/PL/teams"
