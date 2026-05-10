@@ -1,6 +1,7 @@
 import os
 import pickle
 from datetime import datetime
+from urllib.parse import urlparse
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -357,6 +358,80 @@ def get_default_database_url():
         return default_db_url
 
 
+def is_local_database_url(db_url):
+    try:
+        hostname = urlparse(db_url).hostname
+    except Exception:
+        return False
+
+    return hostname in {"localhost", "127.0.0.1", "0.0.0.0"}
+
+
+def run_live_simulation_from_database(db_url, live_simulations):
+    from simulation_engine import run_simulation
+    from sqlalchemy import create_engine
+
+    if not db_url or "your_db" in db_url or "password" in db_url:
+        raise ValueError("Add a real hosted database URL before running the live simulation.")
+
+    if is_local_database_url(db_url):
+        raise ValueError(
+            "This database URL points to localhost. Streamlit Cloud cannot reach a database on your own machine. "
+            "Use a hosted MySQL database URL instead."
+        )
+
+    engine = create_engine(db_url)
+    standings = pd.read_sql("SELECT * FROM standings", engine)
+    matches = pd.read_sql(
+        """
+        SELECT * FROM matches
+        WHERE status IN ('SCHEDULED', 'TIMED')
+        """,
+        engine,
+    )
+
+    if "team_name" not in standings.columns and "name" not in standings.columns:
+        try:
+            teams = pd.read_sql("SELECT team_id, name FROM teams", engine)
+            if not teams.empty:
+                standings = standings.merge(teams, on="team_id", how="left")
+        except Exception:
+            pass
+
+    required_standings_columns = {"team_id", "points", "played", "goal_difference"}
+    required_matches_columns = {"home_team_id", "away_team_id"}
+
+    missing_standings = sorted(required_standings_columns - set(standings.columns))
+    missing_matches = sorted(required_matches_columns - set(matches.columns))
+
+    if standings.empty:
+        raise ValueError("Standings table is empty.")
+    if missing_standings:
+        raise ValueError(
+            f"Standings table is missing required columns: {', '.join(missing_standings)}"
+        )
+    if matches.empty:
+        raise ValueError("No upcoming matches found in the database.")
+    if missing_matches:
+        raise ValueError(
+            f"Matches table is missing required columns: {', '.join(missing_matches)}"
+        )
+
+    points = dict(zip(standings["team_id"], standings["points"]))
+    goal_diff = dict(zip(standings["team_id"], standings["goal_difference"]))
+    team_strength = build_strength_lookup(standings)
+
+    live_results = run_simulation(
+        matches.sort_values("match_date") if "match_date" in matches.columns else matches,
+        points,
+        goal_diff,
+        team_strength,
+        simulations=int(live_simulations),
+    )
+
+    return normalize_live_results(live_results, standings)
+
+
 # Try to load simulation data (from pickle or live session state)
 sim_data = None
 using_live_data = False
@@ -444,41 +519,12 @@ if sim_data is None:
     
     if st.button("Run Live Simulation", type="primary", use_container_width=True):
         try:
-            from simulation_engine import run_simulation
-            from sqlalchemy import create_engine
-            
-            engine = create_engine(db_url)
-            standings = pd.read_sql("SELECT * FROM standings", engine)
-            matches = pd.read_sql(
-                """
-                SELECT * FROM matches
-                WHERE status IN ('SCHEDULED', 'TIMED')
-                """,
-                engine,
-            )
-            
-            if standings.empty:
-                st.error("Standings table is empty.")
-            elif matches.empty:
-                st.error("No upcoming matches found in the database.")
-            else:
-                points = dict(zip(standings["team_id"], standings["points"]))
-                goal_diff = dict(zip(standings["team_id"], standings["goal_difference"]))
-                team_strength = build_strength_lookup(standings)
-
-                live_results = run_simulation(
-                    matches,
-                    points,
-                    goal_diff,
-                    team_strength,
-                    simulations=int(live_simulations),
-                )
-                normalized_live_results = normalize_live_results(live_results, standings)
-                save_simulation_data(normalized_live_results)
-                load_simulation_data.clear()
-                st.session_state["live_sim_data"] = normalized_live_results
-                st.session_state["live_sim_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                st.rerun()
+            normalized_live_results = run_live_simulation_from_database(db_url, live_simulations)
+            save_simulation_data(normalized_live_results)
+            load_simulation_data.clear()
+            st.session_state["live_sim_data"] = normalized_live_results
+            st.session_state["live_sim_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            st.rerun()
         except Exception as e:
             st.error(f"Live simulation failed: {e}")
     
@@ -757,17 +803,22 @@ with tab3:
         st.markdown('<div class="section-label">Full League Title Probabilities</div>', unsafe_allow_html=True)
 
         team_probs = team_probs.sort_values("title_probability", ascending=False)
-        team_label_col = "team_name" if "team_name" in team_probs.columns else "team_id"
         display_df = team_probs.copy()
-        if team_label_col == "team_name":
+        team_label_col = "team_id"
+
+        if "team_name" in display_df.columns:
             display_df["team_name"] = display_df["team_name"].astype(str).str.replace(" FC", "", regex=False)
+            display_df["team_label"] = (
+                display_df["team_name"] + " (" + display_df["team_id"].astype(str) + ")"
+            )
+            team_label_col = "team_label"
 
         st.dataframe(
-            display_df,
+            display_df[["team_label", "title_probability"]] if "team_label" in display_df.columns else display_df[["team_id", "title_probability"]],
             use_container_width=True,
             hide_index=True,
             column_config={
-                "team_name": st.column_config.TextColumn("Team"),
+                "team_label": st.column_config.TextColumn("Team"),
                 "team_id": st.column_config.TextColumn("Team ID"),
                 "title_probability": st.column_config.ProgressColumn(
                     "Title Probability",
@@ -858,40 +909,8 @@ with tab3:
 
     if st.button("Run Live Simulation", type="primary", use_container_width=True):
         try:
-            from simulation_engine import run_simulation
-            from sqlalchemy import create_engine
-
-            engine = create_engine(db_url)
-            standings = pd.read_sql("SELECT * FROM standings", engine)
-            matches = pd.read_sql(
-                """
-                SELECT * FROM matches
-                WHERE status IN ('SCHEDULED', 'TIMED')
-                """,
-                engine,
-            ).sort_values("match_date")
-
-            if matches.empty:
-                st.warning(
-                    "No future fixtures were found with status `SCHEDULED` or `TIMED`, "
-                    "so a live simulation cannot be run yet."
-                )
-                st.stop()
-
-            points = dict(zip(standings["team_id"], standings["points"]))
-            goal_diff = dict(zip(standings["team_id"], standings["goal_difference"]))
-            team_strength = build_strength_lookup(standings)
-
             with st.spinner("Running live simulation from current database state..."):
-                live_results = run_simulation(
-                    matches,
-                    points,
-                    goal_diff,
-                    team_strength,
-                    simulations=int(live_simulations),
-                )
-
-            normalized_live_results = normalize_live_results(live_results, standings)
+                normalized_live_results = run_live_simulation_from_database(db_url, live_simulations)
             save_simulation_data(normalized_live_results)
             load_simulation_data.clear()
             st.session_state["live_sim_data"] = normalized_live_results
