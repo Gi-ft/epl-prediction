@@ -353,6 +353,9 @@ def get_default_database_url():
         if "database_url" in st.secrets:
             return st.secrets["database_url"]
 
+        if "url" in st.secrets:
+            return st.secrets["url"]
+
         if "database" in st.secrets and "url" in st.secrets["database"]:
             return st.secrets["database"]["url"]
 
