@@ -359,6 +359,13 @@ def get_default_database_url():
         if "database" in st.secrets and "url" in st.secrets["database"]:
             return st.secrets["database"]["url"]
 
+        # Support [connections.postgresql] format from secrets.toml
+        if "connections" in st.secrets:
+            if "postgresql" in st.secrets["connections"]:
+                pg_config = st.secrets["connections"]["postgresql"]
+                if "url" in pg_config:
+                    return pg_config["url"]
+
         return default_db_url
     except StreamlitSecretNotFoundError:
         return default_db_url
