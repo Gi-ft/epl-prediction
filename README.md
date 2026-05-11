@@ -4,12 +4,12 @@ A Python-based prediction system for the English Premier League title race, usin
 
 ## Overview
 
-This project fetches live Premier League data from the [football-data.org API](https://www.football-data.org/), stores it in a MySQL database using SQLAlchemy, and runs Monte Carlo simulations to predict the probability of each team winning the league title.
+This project fetches live Premier League data from the [football-data.org API](https://www.football-data.org/), stores it in a PostgreSQL database using SQLAlchemy, and runs Monte Carlo simulations to predict the probability of each team winning the league title.
 
 ## Features
 
 - **Data Pipeline**: Fetches teams, standings, and match data from football-data.org
-- **Database Storage**: MySQL backend using SQLAlchemy ORM
+- **Database Storage**: PostgreSQL backend using SQLAlchemy
 - **Team Strength Calculation**: 
   - Points per game (PPG)
   - Goal difference per game
@@ -22,7 +22,7 @@ This project fetches live Premier League data from the [football-data.org API](h
 ```
 .
 ├── fetch_data.py          # API data fetching
-├── mysql_connector.py     # Database insertion (SQLAlchemy)
+├── postgres_connector.py  # Database insertion for PostgreSQL (SQLAlchemy)
 ├── model_simulation.ipynb # Main simulation notebook
 ├── viualization.ipynb     # Visualization notebook
 ├── requirements.txt       # Python dependencies
@@ -39,20 +39,20 @@ pip install -r requirements.txt
 
 Required packages:
 - sqlalchemy
-- pymysql
+- psycopg
 - pandas
 - requests
 - matplotlib (for visualization)
 
 ### 2. Configure Database
 
-Update `mysql_connector.py` with your MySQL credentials:
+Set a PostgreSQL connection string before running the loader:
 
-```python
-engine = create_engine("mysql+pymysql://username:password@localhost/epl_database")
+```bash
+$env:DATABASE_URL="postgresql+psycopg://postgres:password@localhost:5432/epl_database"
 ```
 
-### 3. Set up MySQL Schema
+### 3. Set up PostgreSQL Schema
 
 ```sql
 CREATE DATABASE epl_database;
@@ -77,7 +77,7 @@ CREATE TABLE standings (
 
 CREATE TABLE matches (
     match_id INT PRIMARY KEY,
-    match_date DATETIME,
+    match_date TIMESTAMP,
     home_team_id INT,
     away_team_id INT,
     home_goals INT,
@@ -102,7 +102,7 @@ Get a free API key at [football-data.org](https://www.football-data.org/).
 
 ```bash
 python fetch_data.py
-python mysql_connector.py
+python postgres_connector.py
 ```
 
 ### Step 2: Run Simulation
@@ -114,7 +114,7 @@ jupyter notebook model_simulation.ipynb
 ```
 
 The notebook will:
-1. Load current standings from MySQL
+1. Load current standings from PostgreSQL
 2. Calculate team strength metrics
 3. Run 10,000 simulations of remaining matches
 4. Output title win probabilities
@@ -148,7 +148,7 @@ football-data.org API
         ↓
    fetch_data.py
         ↓
-    MySQL Database
+ PostgreSQL Database
         ↓
 model_simulation.ipynb
         ↓

@@ -1,32 +1,41 @@
 import os
 
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+
+API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")
+BASE_URL = "https://api.football-data.org/v4"
+
+HEADERS = {"X-Auth-Token": API_KEY}
 
 
-api_token = os.getenv("FOOTBALL_DATA_API_KEY")
-
-if not api_token:
-    raise RuntimeError(
-        "FOOTBALL_DATA_API_KEY is not set. Add it as an environment variable "
-        "or Streamlit secret before fetching data."
-    )
-
-headers = {"X-Auth-Token": api_token}
-
-# Fetch Teams
-teams_url = "https://api.football-data.org/v4/competitions/PL/teams"
-teams_response = requests.get(teams_url, headers=headers)
-teams_data = teams_response.json()
-
-# Fetch Standings
-standings_url = "https://api.football-data.org/v4/competitions/PL/standings"
-standings_response = requests.get(standings_url, headers=headers)
-standings_data = standings_response.json()
-import json
-print(json.dumps(standings_data['standings'][0]['table'], indent=2))
+def fetch_teams():
+    """Fetch all teams in the Premier League."""
+    url = f"{BASE_URL}/competitions/PL/teams"
+    response = requests.get(url, headers=HEADERS)
+    response.raise_for_status()
+    return response.json()
 
 
-# Fetch Matches
-matches_url = "https://api.football-data.org/v4/competitions/PL/matches"
-matches_response = requests.get(matches_url, headers=headers)
-matches_data = matches_response.json()
+def fetch_standings():
+    """Fetch current Premier League standings."""
+    url = f"{BASE_URL}/competitions/PL/standings"
+    response = requests.get(url, headers=HEADERS)
+    response.raise_for_status()
+    return response.json()
+
+
+def fetch_matches():
+    """Fetch all matches for the current Premier League season."""
+    url = f"{BASE_URL}/competitions/PL/matches"
+    response = requests.get(url, headers=HEADERS)
+    response.raise_for_status()
+    return response.json()
+
+
+# Fetch data on module import
+teams_data = fetch_teams()
+standings_data = fetch_standings()
+matches_data = fetch_matches()

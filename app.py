@@ -332,9 +332,12 @@ def normalize_live_results(results, standings_df):
     ):
         name_col = "team_name" if "team_name" in standings_df.columns else "name" if "name" in standings_df.columns else None
         if name_col is not None:
-            name_lookup = dict(zip(standings_df["team_id"], standings_df[name_col]))
+            standings_ids = standings_df["team_id"].astype(str)
+            name_lookup = dict(zip(standings_ids, standings_df[name_col].astype(str)))
             normalized["team_probs"] = normalized["team_probs"].copy()
-            normalized["team_probs"]["team_name"] = normalized["team_probs"]["team_id"].map(name_lookup)
+            normalized["team_probs"]["team_name"] = (
+                normalized["team_probs"]["team_id"].astype(str).map(name_lookup)
+            )
 
     return normalized
 
@@ -345,7 +348,7 @@ def save_simulation_data(simulation_data):
 
 
 def get_default_database_url():
-    default_db_url = "mysql+pymysql://user:password@localhost/your_db"
+    default_db_url = "postgresql+psycopg://user:password@host:5432/epl_database"
     try:
         if "database_url" in st.secrets:
             return st.secrets["database_url"]
@@ -377,7 +380,7 @@ def run_live_simulation_from_database(db_url, live_simulations):
     if is_local_database_url(db_url):
         raise ValueError(
             "This database URL points to localhost. Streamlit Cloud cannot reach a database on your own machine. "
-            "Use a hosted MySQL database URL instead."
+            "Use a hosted PostgreSQL database URL instead."
         )
 
     engine = create_engine(db_url)
@@ -485,7 +488,7 @@ if sim_data is None:
             <h1 class="hero-title">No Simulation Data Available</h1>
             <p class="hero-subtitle">
                 The simulation results file was not found. 
-                Run a live simulation from your MySQL database to generate fresh predictions.
+                Run a live simulation from your PostgreSQL database to generate fresh predictions.
             </p>
         </section>
         """,
@@ -498,7 +501,7 @@ if sim_data is None:
     default_db_url = get_default_database_url()
     
     st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
-    st.caption("Run a fresh title simulation from the current MySQL standings and scheduled fixtures.")
+    st.caption("Run a fresh title simulation from the current PostgreSQL standings and scheduled fixtures.")
     
     live_col1, live_col2 = st.columns([3, 1])
     with live_col1:
@@ -506,7 +509,7 @@ if sim_data is None:
             "Database URL",
             value=default_db_url,
             type="password",
-            help="Example: mysql+pymysql://root:password@localhost/epl_database",
+            help="Example: postgresql+psycopg://postgres:password@db-host:5432/epl_database",
         )
     with live_col2:
         live_simulations = st.number_input(
@@ -805,11 +808,12 @@ with tab3:
         team_probs = team_probs.sort_values("title_probability", ascending=False)
         display_df = team_probs.copy()
         team_label_col = "team_id"
+        name_col = "team_name" if "team_name" in display_df.columns else "name" if "name" in display_df.columns else None
 
-        if "team_name" in display_df.columns:
-            display_df["team_name"] = display_df["team_name"].astype(str).str.replace(" FC", "", regex=False)
+        if name_col is not None:
+            display_df[name_col] = display_df[name_col].astype(str).str.replace(" FC", "", regex=False)
             display_df["team_label"] = (
-                display_df["team_name"] + " (" + display_df["team_id"].astype(str) + ")"
+                display_df[name_col] + " (" + display_df["team_id"].astype(str) + ")"
             )
             team_label_col = "team_label"
 
@@ -888,7 +892,7 @@ with tab3:
     default_db_url = get_default_database_url()
 
     st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
-    st.caption("Run a fresh title simulation from the current MySQL standings and scheduled fixtures.")
+    st.caption("Run a fresh title simulation from the current PostgreSQL standings and scheduled fixtures.")
 
     live_col1, live_col2 = st.columns([3, 1])
     with live_col1:
@@ -896,7 +900,7 @@ with tab3:
             "Database URL",
             value=default_db_url,
             type="password",
-            help="Example: mysql+pymysql://root:password@localhost/epl_database",
+            help="Example: postgresql+psycopg://postgres:password@db-host:5432/epl_database",
         )
     with live_col2:
         live_simulations = st.number_input(
